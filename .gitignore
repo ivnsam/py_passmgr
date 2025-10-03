@@ -1,3 +1,8 @@
+data.json
+data.bson
+data.json.bson
+data.bson.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
