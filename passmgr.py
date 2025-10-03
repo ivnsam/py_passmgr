@@ -4,12 +4,49 @@ import bson
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLineEdit, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QListWidget, QLabel, QListWidgetItem
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, Signal
 import kryptonator
 
 DATA_FILE = "data.json"
 PASSPHRASE = "1234567812345678"
 
+
+class TimerButton(QPushButton):
+    finished = Signal()  # сигнал, который сработает, когда таймер закончится
+
+    def __init__(self, text="Start Timer", duration_seconds=5.0, parent=None):
+        super().__init__(text, parent)
+
+        self.default_text = text
+        self.duration = duration_seconds
+        self.remaining = 0.0
+        self.interval_ms = 100  # шаг таймера (100мс = точность до 0.1с)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_timer)
+
+        # по клику запускаем таймер
+        self.clicked.connect(self._on_click)
+
+    def _on_click(self):
+        if self.timer.isActive():
+            return  # если таймер уже идёт — игнорируем
+        self.start_timer()
+
+    def start_timer(self):
+        """Запустить отсчет."""
+        self.remaining = self.duration
+        self.setText(f"{self.remaining:.1f}")
+        self.timer.start(self.interval_ms)
+
+    def update_timer(self):
+        self.remaining -= self.interval_ms / 1000.0
+        if self.remaining > 0:
+            self.setText(f"{self.remaining:.1f}")
+        else:
+            self.timer.stop()
+            self.setText(self.default_text)
+            self.finished.emit()  # сообщаем, что таймер завершился
 
 class SimpleForm(QWidget):
     def __init__(self):
@@ -23,14 +60,14 @@ class SimpleForm(QWidget):
         self.id_edit.setPlaceholderText("Name this password")
         self.id_edit.setEnabled(False)
         login_field = QHBoxLayout()
-        self.copy_login_btn = QPushButton("🪪Copy login")
+        self.copy_login_btn = TimerButton("🪪Copy login")
         self.login_edit = QLineEdit()
         self.login_edit.setPlaceholderText("Write here your login")
         self.login_edit.setEnabled(False)
         login_field.addWidget(self.copy_login_btn)
         login_field.addWidget(self.login_edit)
         password_field = QHBoxLayout()
-        self.copy_password_btn = QPushButton("🔑Copy password")
+        self.copy_password_btn = TimerButton("🔑Copy password")
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
         self.password_edit.setPlaceholderText("Write here your password")
