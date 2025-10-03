@@ -2,7 +2,7 @@
 
 Simple silly password manager for practicing python and personal use.
 
-It will not be ready for production or commertial use.
+Probably it will not be ready for production or commertial use.
 
 ## Run
 

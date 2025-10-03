@@ -13,6 +13,9 @@ PASSPHRASE = "1234567812345678"
 
 class SimpleForm(QWidget):
     def __init__(self):
+        # Подбираем параметры Argon2
+        sample = PASSPHRASE.encode("utf-8") + kryptonator.get_pepper()
+        self.t, self.m, self.p = kryptonator.autotune_argon2(sample)
         super().__init__()
         self.setWindowTitle("Password manager <by ivnsam>")
         # input fields
@@ -27,17 +30,16 @@ class SimpleForm(QWidget):
         login_field.addWidget(self.copy_login_btn)
         login_field.addWidget(self.login_edit)
         password_field = QHBoxLayout()
-        self.copy_pw_btn = QPushButton("🔑Copy password")
+        self.copy_password_btn = QPushButton("🔑Copy password")
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
         self.password_edit.setPlaceholderText("Write here your password")
         self.password_edit.setEnabled(False)
-        self.toggle_pw_btn = QPushButton("👁")
-        self.toggle_pw_btn.setCheckable(True)
-        self.toggle_pw_btn.toggled.connect(self.toggle_password)
-        password_field.addWidget(self.copy_pw_btn)
+        self.toggle_password_btn = QPushButton("👁")
+        self.toggle_password_btn.setCheckable(True)
+        password_field.addWidget(self.copy_password_btn)
         password_field.addWidget(self.password_edit)
-        password_field.addWidget(self.toggle_pw_btn)
+        password_field.addWidget(self.toggle_password_btn)
         self.comment_edit = QTextEdit()
         self.comment_edit.setEnabled(False)
         self.comment_edit.setPlaceholderText("Comment (ex. site or service name)")
@@ -63,7 +65,6 @@ class SimpleForm(QWidget):
         for entry in self.passwords.values():
             self.add_password_item(entry)
         self.list_widget.setCurrentRow(-1)
-        self.list_widget.itemSelectionChanged.connect(self.on_select)
 
         # complete screen
         layout = QVBoxLayout()
@@ -84,10 +85,28 @@ class SimpleForm(QWidget):
         self.add_new_btn.clicked.connect(self.on_new)
         self.save_btn.clicked.connect(self.on_save)
         self.copy_login_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.login_edit.text()))
-        self.copy_pw_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.password_edit.text()))
+        self.copy_password_btn.clicked.connect(self.on_copy_password)
         self.edit_btn.clicked.connect(self.toggle_edit)
         self.delete_btn.clicked.connect(self.on_delete)
+        self.toggle_password_btn.toggled.connect(self.toggle_password)
+        self.list_widget.itemSelectionChanged.connect(self.on_select)
 
+
+    def reset_ui_states(self):
+        self.id_edit.setPlaceholderText("Name this password")
+        self.id_edit.setEnabled(False)
+        self.login_edit.setPlaceholderText("Write here your login")
+        self.login_edit.setEnabled(False)
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.password_edit.setPlaceholderText("Write here your password")
+        self.password_edit.setEnabled(False)
+        self.toggle_password_btn.setCheckable(True)
+        self.comment_edit.setEnabled(False)
+        self.comment_edit.setPlaceholderText("Comment (ex. site or service name)")
+        self.save_btn.setHidden(True)
+        self.edit_btn.setCheckable(True)
+        self.edit_btn.setEnabled(False)
+        self.delete_btn.setEnabled(False)
 
     def toggle_password(self, checked):
         if checked:
@@ -97,10 +116,22 @@ class SimpleForm(QWidget):
                 item = item.text().split(" | ")[0]
                 item = self.passwords[item]
                 self.password_edit.setText(kryptonator.decrypt_string(item["password"], PASSPHRASE))
+                item = ""
+                del item
             self.password_edit.setEchoMode(QLineEdit.Normal)
         else:
             self.password_edit.setText("***")
             self.password_edit.setEchoMode(QLineEdit.Password)
+    
+    def on_copy_password(self):
+        selected_items = self.list_widget.selectedItems()
+        if selected_items:
+            item = selected_items[0]
+            item = item.text().split(" | ")[0]
+            item = self.passwords[item]
+            QApplication.clipboard().setText(kryptonator.decrypt_string(item["password"], PASSPHRASE))
+            item = ""
+            del item
 
     def on_select(self):
         # get all selected items
@@ -111,7 +142,7 @@ class SimpleForm(QWidget):
             item = item.text().split(" | ")[0]
             item = self.passwords[item]
             # UI modifications
-            self.toggle_pw_btn.setChecked(False)
+            self.toggle_password_btn.setChecked(False)
             self.id_edit.setText(item["id"])
             self.id_edit.setEnabled(False)
             self.login_edit.setText(item["login"])
@@ -119,15 +150,18 @@ class SimpleForm(QWidget):
             self.copy_login_btn.setEnabled(True)
             self.password_edit.setText("***")
             self.password_edit.setEnabled(False)
-            self.copy_pw_btn.setEnabled(True)
+            self.copy_password_btn.setEnabled(True)
             self.comment_edit.setText(item["comment"])
             self.comment_edit.setEnabled(False)
             self.edit_btn.setEnabled(True)
             self.delete_btn.setEnabled(True)
             self.save_btn.setHidden(True)
             self.add_new_btn.setHidden(False)
+            item = ""
+            del item
     
     def on_new(self):
+        self.list_widget.clearSelection()
         self.id_edit.clear()
         self.id_edit.setEnabled(True)
         self.id_edit.setFocus()
@@ -141,13 +175,10 @@ class SimpleForm(QWidget):
         self.add_new_btn.setHidden(True)
 
     def on_save(self):
-        # Подбираем параметры Argon2
-        sample = PASSPHRASE.encode("utf-8") + kryptonator.get_pepper()
-        t, m, p = kryptonator.autotune_argon2(sample)
         entry = {
             "id": self.id_edit.text(),
             "login": self.login_edit.text(),
-            "password": kryptonator.encrypt_string(self.password_edit.text(), PASSPHRASE, t, m, p),
+            "password": kryptonator.encrypt_string(self.password_edit.text(), PASSPHRASE, self.t, self.m, self.p),
             "comment": self.comment_edit.toPlainText()
         }
 
@@ -173,7 +204,6 @@ class SimpleForm(QWidget):
             find_results = self.list_widget.findItems(item["id"], Qt.MatchStartsWith)
             item_number = self.list_widget.indexFromItem(find_results[0]).row()
             self.passwords.pop(item["id"])
-            # self.delete_password_item(item_number)
             self.list_widget.takeItem(item_number)
             self.list_widget.clearSelection()
             self.save_passwords_file()
@@ -188,6 +218,28 @@ class SimpleForm(QWidget):
             self.comment_edit.clear()
     
     def toggle_edit(self, checked):
+        if checked:
+            # Edit was clicked
+            self.edit_btn.setText("✖️Cancel")
+        else:
+            # Cancel was clicked
+            self.edit_btn.setText("✏️Edit")
+            # get all selected items
+            selected_items = self.list_widget.selectedItems()
+            if selected_items:
+                item = selected_items[0]
+                # here is no multiselect, so it needs only first one
+                item = item.text().split(" | ")[0]
+                item = self.passwords[item]
+                # UI modifications
+                self.id_edit.setText(item["id"])
+                self.login_edit.setText(item["login"])
+                self.toggle_password_btn.setChecked(False)
+                self.password_edit.setText("***")
+                self.comment_edit.setText(item["comment"])
+                item = ""
+                del item
+
         self.id_edit.setEnabled(checked)
         self.login_edit.setEnabled(checked)
         self.password_edit.setEnabled(checked)
@@ -198,21 +250,13 @@ class SimpleForm(QWidget):
 
     def save_passwords_file(self):
         # Save passwords from memory to file
-        ## old insecure json format
-        # with open(DATA_FILE, "w", encoding="utf-8") as f:
-        #     json.dump(self.passwords, f, ensure_ascii=False, indent=2)
         with open(DATA_FILE+".bson", "wb") as f:
             f.write(bson.dumps(self.passwords))
 
-        # with open(DATA_FILE, "r", encoding="utf-8") as f:
-        #     print(kryptonator.decrypt_string(f.read(), "1234567812345678"))
     def load_passwords_file(self) -> dict:
         # Load passwords from file
         data = {}
         try:
-            ## old insecure json format
-            # with open(DATA_FILE, "r", encoding="utf-8") as f:
-            #     data = json.load(f)
             with open(DATA_FILE+".bson", "rb") as f:
                 data = bson.loads(f.read())
         except FileNotFoundError:
@@ -220,11 +264,6 @@ class SimpleForm(QWidget):
                 f.write(bson.dumps(data))
             with open(DATA_FILE+".bson", "rb") as f:
                 data = bson.loads(f.read())
-            ## old insecure json format
-            # with open(DATA_FILE, "w", encoding="utf-8") as f:
-            #     json.dump(data, f, ensure_ascii=False, indent=2)
-            # with open(DATA_FILE, "r", encoding="utf-8") as f:
-            #     data = json.load(f)
         return data
 
     def add_password_item(self, entry):
