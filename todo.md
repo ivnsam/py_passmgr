@@ -3,7 +3,7 @@ To-Do:
     [x] change json to bson passwords file format for saving binary data in the future
     [x] расшифровывать пароль в момент нажатия на глаз и запись текста в поле ввода, после этого - сразу занулять хранящийся в памяти пароль (как?)
     [x] create timer for copy buttons
-    [ ] add cleaning copy buffer when timer was finished
+    [x] add cleaning copy buffer when timer was finished
     [ ] add symbol by symbol input (like in keepassx) for security
     [x] отжимать "глаз" при выборе другого пароля из списка
     [x] сделать неактивным поле комментария при выключенном редактировании (проблема только сразу после запуска приложения)
