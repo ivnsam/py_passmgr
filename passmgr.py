@@ -1,10 +1,11 @@
 import sys
-# import json
 import bson
 from PySide6.QtWidgets import (
     QApplication, QWidget, QLineEdit, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QListWidget, QLabel, QListWidgetItem
 )
 from PySide6.QtCore import Qt, QTimer, Signal
+import keyboard
+from random import uniform
 import kryptonator
 
 DATA_FILE = "data.json"
@@ -122,8 +123,8 @@ class SimpleForm(QWidget):
         self.add_new_btn.clicked.connect(self.on_new)
         self.save_btn.clicked.connect(self.on_save)
         self.copy_login_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.login_edit.text()))
-        self.copy_password_btn.clicked.connect(self.on_copy_password)
-        self.copy_password_btn.finished.connect(lambda: QApplication.clipboard().setText(""))
+        self.copy_password_btn.clicked.connect(lambda: keyboard.add_hotkey('ctrl+alt+v', self.print_password))
+        self.copy_password_btn.finished.connect(lambda: keyboard.remove_hotkey('ctrl+alt+v'))
         self.edit_btn.clicked.connect(self.toggle_edit)
         self.delete_btn.clicked.connect(self.on_delete)
         self.toggle_password_btn.toggled.connect(self.toggle_password)
@@ -161,16 +162,6 @@ class SimpleForm(QWidget):
             self.password_edit.setText("***")
             self.password_edit.setEchoMode(QLineEdit.Password)
     
-    def on_copy_password(self):
-        selected_items = self.list_widget.selectedItems()
-        if selected_items:
-            item = selected_items[0]
-            item = item.text().split(" | ")[0]
-            item = self.passwords[item]
-            QApplication.clipboard().setText(kryptonator.decrypt_string(item["password"], PASSPHRASE))
-            item = ""
-            del item
-
     def on_select(self):
         # get all selected items
         selected_items = self.list_widget.selectedItems()
@@ -285,6 +276,19 @@ class SimpleForm(QWidget):
         self.save_btn.setHidden(not checked)
         self.add_new_btn.setHidden(checked)
 
+
+    def print_password(self):
+        selected_items = self.list_widget.selectedItems()
+        if selected_items:
+            item = selected_items[0]
+            # here is no multiselect, so it needs only first one
+            item = item.text().split(" | ")[0]
+            item = self.passwords[item]
+            item = kryptonator.decrypt_string(item["password"], PASSPHRASE)
+            for symbol in item:
+                keyboard.write(symbol, uniform(0.02, 0.1))
+            item = ""
+            del item
 
     def save_passwords_file(self):
         # Save passwords from memory to file
