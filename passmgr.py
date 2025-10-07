@@ -1,15 +1,297 @@
 import sys
 import bson
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLineEdit, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QListWidget, QLabel, QListWidgetItem
+    QApplication, QWidget, QLineEdit, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QListWidget, QLabel, QListWidgetItem, QMessageBox, QInputDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QShortcut, QKeySequence
 import keyboard
 from random import uniform
 import kryptonator
+import keyring
+from argon2 import PasswordHasher, exceptions as argon2_exceptions
+import json
+import time
+import stat
+import traceback
+from pathlib import Path
+import os
+import sys
 
+# PASSPHRASE = "1234567812345678"
+# Константы
 DATA_FILE = "data.json"
-PASSPHRASE = "1234567812345678"
+APP_NAME = "secure_pyside_app_v1"
+KEY_PASSWORD_HASH = "password_hash"
+KEY_SECURITY = "security_settings"
+KEY_BACKEND = "storage_backend"
+LOCK_KEY = "lock_state"
+KEY_FILE_PW = "local_store_password"  # для хранения сгенерированного пароля файла в keyring
+
+DEFAULT_SECURITY = {"max_attempts": 5, "lock_duration": 5 * 60}
+LOCAL_STORE_DEFAULT = str(Path.home() / ".secure_app_store.bin")
+
+# Argon2 для хэшей пароля приложения
+PH = PasswordHasher(time_cost=3, memory_cost=64 * 1024, parallelism=2, hash_len=32)
+
+
+# -------------------------
+# Keyring & password handling
+# -------------------------
+def password_is_set():
+    try:
+        return bool(keyring.get_password(APP_NAME, KEY_PASSWORD_HASH))
+    except Exception:
+        return False
+
+
+def set_password_hash(pwd):
+    phash = PH.hash(pwd)
+    keyring.set_password(APP_NAME, KEY_PASSWORD_HASH, phash)
+    clear_lock_state()
+    # очистка
+    try:
+        del phash
+    except Exception:
+        pass
+
+
+def verify_password(pwd):
+    phash = None
+    try:
+        phash = keyring.get_password(APP_NAME, KEY_PASSWORD_HASH)
+        if not phash:
+            return False
+        PH.verify(phash, pwd)
+        if PH.check_needs_rehash(phash):
+            set_password_hash(pwd)
+        return True
+    except argon2_exceptions.VerifyMismatchError:
+        return False
+    except Exception:
+        traceback.print_exc()
+        return False
+    finally:
+        try:
+            del phash
+        except Exception:
+            pass
+
+
+# -------------------------
+# Keyring json helpers & security settings
+# -------------------------
+def load_json_key(key, default):
+    try:
+        raw = keyring.get_password(APP_NAME, key)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        traceback.print_exc()
+    return default
+
+
+def save_json_key(key, value):
+    try:
+        keyring.set_password(APP_NAME, key, json.dumps(value))
+    except Exception:
+        traceback.print_exc()
+
+
+def get_security_settings():
+    return load_json_key(KEY_SECURITY, DEFAULT_SECURITY.copy())
+
+
+def set_security_settings(settings):
+    save_json_key(KEY_SECURITY, settings)
+
+
+def get_lock_state():
+    return load_json_key(LOCK_KEY, {"attempts": 0, "unlock_time": 0.0})
+
+
+def set_lock_state(state):
+    save_json_key(LOCK_KEY, state)
+
+
+def clear_lock_state():
+    set_lock_state({"attempts": 0, "unlock_time": 0.0})
+
+
+def is_locked():
+    st = get_lock_state()
+    return time.time() < st.get("unlock_time", 0)
+
+
+def get_remaining_lock_seconds():
+    st = get_lock_state()
+    return max(0, int(st.get("unlock_time", 0) - time.time()))
+
+
+def increment_attempts_and_lock_if_needed(settings):
+    st = get_lock_state()
+    attempts = st.get("attempts", 0) + 1
+    if attempts >= settings.get("max_attempts", 5):
+        st = {"attempts": attempts, "unlock_time": time.time() + settings.get("lock_duration", 300)}
+        set_lock_state(st)
+        return True, 0
+    st["attempts"] = attempts
+    set_lock_state(st)
+    return False, settings.get("max_attempts", 5) - attempts
+
+
+def load_backend_choice():
+    try:
+        raw = keyring.get_password(APP_NAME, KEY_BACKEND)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return {"type": "keyring"}
+
+
+def save_backend_choice(b):
+    keyring.set_password(APP_NAME, KEY_BACKEND, json.dumps(b))
+
+
+# -------------------------
+# Security environment checks
+# -------------------------
+def check_security_environment(parent=None):
+    messages = []
+
+    # keyring backend type
+    try:
+        kr = keyring.get_keyring()
+        backend_type = type(kr).__name__
+        if "Plaintext" in backend_type or "fail" in backend_type.lower():
+            messages.append("Keyring работает в небезопасном режиме (Plaintext backend). Данные могут храниться в открытом виде.")
+    except Exception:
+        messages.append("Не удалось определить backend keyring (возможна некорректная конфигурация).")
+
+    # PEPPER env variable
+    if "PEPPER" in os.environ:
+        messages.append("Найдена переменная окружения PEPPER. Не рекомендуется хранить pepper в env; используйте keyring/TPM.")
+
+    # check local backend file permissions if configured
+    try:
+        backend_choice = load_backend_choice()
+        if backend_choice.get("type") == "local_encrypted_file":
+            path = backend_choice.get("file")
+            if path and os.path.exists(path):
+                st = os.stat(path)
+                if os.name == "posix":
+                    perms = stat.S_IMODE(st.st_mode)
+                    if perms != 0o600:
+                        messages.append(f"Файл {path} имеет права {oct(perms)}; рекомендуется установить 0o600 (rw-------).")
+    except Exception:
+        pass
+
+    if messages:
+        text = "Обнаружены потенциальные проблемы безопасности:\n\n" + "\n\n".join(messages)
+        if parent is None:
+            QMessageBox.warning(None, "Проверка безопасности", text)
+        else:
+            QMessageBox.warning(parent, "Проверка безопасности", text)
+
+
+class PasswordWindow(QWidget):
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Авторизация - Password manager <by ivnsam>")
+        self.setFixedSize(420, 200)
+        self.settings = get_security_settings()
+        self.backend = load_backend_choice()
+
+        # warn if keyring insecure (early)
+        try:
+            kr = keyring.get_keyring()
+            backend_type = type(kr).__name__
+            if "Plaintext" in backend_type:
+                QMessageBox.warning(self, "Предупреждение безопасности",
+                                    "Keyring работает в незашифрованном режиме (Plaintext backend). Рекомендуется использовать локальное зашифрованное хранилище.")
+        except Exception:
+            pass
+
+        layout = QVBoxLayout()
+        self.label = QLabel("Введите пароль приложения:")
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.Password)
+        self.login_button = QPushButton("Войти")
+        login_shortcut = QShortcut('return', self)
+        login_shortcut.activated.connect(self.login_button.click)
+        self.login_button.setShortcut(Qt.Key.Key_Enter)
+        self.login_button.clicked.connect(self.check_password)
+
+        layout.addWidget(self.label)
+        layout.addWidget(self.password_input)
+        layout.addWidget(self.login_button)
+
+        if not password_is_set():
+            self.label.setText("Пароль не установлен. Создайте новый (рекомендуем не менее 16 символов):")
+            self.login_button.setText("Создать пароль")
+            self.login_button.clicked.disconnect()
+            self.login_button.clicked.connect(self.set_new_password)
+
+        self.setLayout(layout)
+        # store session password after successful login (kept only in memory during session)
+        self.session_password = None
+
+    def set_new_password(self):
+        pwd = self.password_input.text().strip()
+        if not pwd:
+            QMessageBox.warning(self, "Ошибка", "Пароль не может быть пустым.")
+            return
+        confirm, ok = QInputDialog.getText(self, "Подтверждение", "Повторите пароль:", QLineEdit.Password)
+        if not ok or pwd != confirm:
+            QMessageBox.warning(self, "Ошибка", "Пароли не совпадают.")
+            return
+        set_password_hash(pwd)
+        # clear UI field
+        self.password_input.clear()
+        # store session password
+        self.session_password = pwd
+        QMessageBox.information(self, "Готово", "Пароль создан.")
+        # open main window and pass the session password
+        self.open_main_window()
+
+    def check_password(self):
+        if is_locked():
+            remain = get_remaining_lock_seconds()
+            QMessageBox.critical(self, "Заблокировано", f"Подождите {remain // 60} мин {remain % 60} сек.")
+            QApplication.quit()
+            return
+        pwd = self.password_input.text().strip()
+        self.password_input.clear()
+        if verify_password(pwd):
+            clear_lock_state()
+            self.session_password = pwd  # keep for session (used e.g. for "use app password for local store")
+            self.open_main_window()
+        else:
+            locked, remaining = increment_attempts_and_lock_if_needed(self.settings)
+            if locked:
+                QMessageBox.critical(self, "Блокировка", f"Достигнуто {self.settings.get('max_attempts')} неверных попыток. Приложение заблокировано.")
+                QApplication.quit()
+            else:
+                QMessageBox.warning(self, "Ошибка", f"Неверный пароль. Осталось попыток: {remaining}")
+        # try to remove pwd from memory
+        try:
+            del pwd
+        except Exception:
+            pass
+
+    def open_main_window(self):
+        self.main_window = PassMgrWindow(passphrase=self.session_password)#session_password=self.session_password)
+        self.main_window.show()
+        # clear session_password in this window (MainWindow keeps reference if needed)
+        self.session_password = None
+        self.close()
 
 
 class TimerButton(QPushButton):
@@ -49,10 +331,13 @@ class TimerButton(QPushButton):
             self.setText(self.default_text)
             self.finished.emit()  # сообщаем, что таймер завершился
 
-class SimpleForm(QWidget):
-    def __init__(self):
+class PassMgrWindow(QWidget):
+    def __init__(self, passphrase):
+        self.passphrase = passphrase
+        passphrase = None
+        del passphrase
         # Подбираем параметры Argon2
-        sample = PASSPHRASE.encode("utf-8") + kryptonator.get_pepper()
+        sample = self.passphrase.encode("utf-8") + kryptonator.get_pepper()
         self.t, self.m, self.p = kryptonator.autotune_argon2(sample)
         super().__init__()
         self.setWindowTitle("Password manager <by ivnsam>")
@@ -154,7 +439,7 @@ class SimpleForm(QWidget):
                 item = selected_items[0]
                 item = item.text().split(" | ")[0]
                 item = self.passwords[item]
-                self.password_edit.setText(kryptonator.decrypt_string(item["password"], PASSPHRASE))
+                self.password_edit.setText(kryptonator.decrypt_string(item["password"], self.passphrase))
                 item = ""
                 del item
             self.password_edit.setEchoMode(QLineEdit.Normal)
@@ -207,7 +492,7 @@ class SimpleForm(QWidget):
         entry = {
             "id": self.id_edit.text(),
             "login": self.login_edit.text(),
-            "password": kryptonator.encrypt_string(self.password_edit.text(), PASSPHRASE, self.t, self.m, self.p),
+            "password": kryptonator.encrypt_string(self.password_edit.text(), self.passphrase, self.t, self.m, self.p),
             "comment": self.comment_edit.toPlainText()
         }
 
@@ -284,7 +569,7 @@ class SimpleForm(QWidget):
             # here is no multiselect, so it needs only first one
             item = item.text().split(" | ")[0]
             item = self.passwords[item]
-            item = kryptonator.decrypt_string(item["password"], PASSPHRASE)
+            item = kryptonator.decrypt_string(item["password"], self.passphrase)
             for symbol in item:
                 keyboard.write(symbol, uniform(0.02, 0.1))
             item = ""
@@ -325,8 +610,12 @@ class SimpleForm(QWidget):
 
 def main():
     app = QApplication(sys.argv)
-    window = SimpleForm()
-    window.show()
+    if is_locked():
+        remain = get_remaining_lock_seconds()
+        QMessageBox.critical(None, "Блокировка", f"Приложение заблокировано. Подождите {remain // 60} мин {remain % 60} сек.")
+        sys.exit(0)
+    w = PasswordWindow()
+    w.show()
     sys.exit(app.exec())
 
 if __name__ == "__main__":
