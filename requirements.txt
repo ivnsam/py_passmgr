@@ -1,2 +1,3 @@
 pyside==6
 bson==0.5.10
+keyboard
