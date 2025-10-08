@@ -9,3 +9,4 @@ pyinstaller==6.15.0
 pyinstaller-hooks-contrib==2025.8
 pycryptodome==3.23.0
 pycryptodomex==3.23.0
+keyring==25.6.0
