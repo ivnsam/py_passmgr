@@ -15,6 +15,10 @@ on:
         - 'false'
         - 'true'
 
+env:
+  APP_NAME: passmgr
+  MAIN_FILE: passmgr.py
+
 jobs:
   build:
     name: Build for ${{ matrix.os }}
@@ -22,11 +26,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-
-    env:
-      APP_NAME: passmgr
-      MAIN_FILE: passmgr.py
-      CREATE_RELEASE: ${{ inputs.create_release || 'false' }}  # ← поставь true, когда захочешь, чтобы релизы создавались
 
     steps:
       - name: Checkout repo
@@ -56,7 +55,7 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: env.CREATE_RELEASE == 'true'
+    if: inputs.create_release == 'true'
 
     steps:
       - name: Download all build artifacts
