@@ -1,0 +1,72 @@
+name: Build PySide6 App
+
+on:
+  push:
+    tags:
+      - "release-v*"
+  workflow_dispatch:  # позволяет запуск вручную из любой ветки/тэга
+    inputs:
+      create_release:
+        type: choice
+        description: "Создавать GitHub Release (true/false)"
+        required: false
+        default: "false"
+        options: 
+        - 'false'
+        - 'true'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    env:
+      APP_NAME: passmgr
+      MAIN_FILE: passmgr.py
+      CREATE_RELEASE: ${{ inputs.create_release || 'false' }}  # ← поставь true, когда захочешь, чтобы релизы создавались
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pyside==6 bson==0.5.10 keyboard
+
+      - name: Build app
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed $MAIN_FILE --name $APP_NAME
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ env.APP_NAME }}
+          path: dist/*
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: env.CREATE_RELEASE == 'true'
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
