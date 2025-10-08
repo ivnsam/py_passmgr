@@ -34,6 +34,11 @@ jobs:
       - name: Build app
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed $MAIN_FILE --name $APP_NAME
+      
+      - name: Build app windows
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed $env:MAIN_FILE --name $env:APP_NAME
+        if: ${{ matrix.os }} == 'windows-latest'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
