@@ -1,10 +1,10 @@
 import sys
 import bson
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QLineEdit, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QListWidget, QLabel, QListWidgetItem, QMessageBox, QInputDialog
+    QApplication, QWidget, QLineEdit, QTextEdit, QPushButton, QVBoxLayout, QHBoxLayout, QListWidget, QLabel, QListWidgetItem, QMessageBox, QInputDialog, QDialog, QDialogButtonBox, QSpinBox, QFileDialog, QFormLayout, QCheckBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QShortcut
 import keyboard
 from random import uniform
 import kryptonator
@@ -18,15 +18,13 @@ from pathlib import Path
 import os
 import sys
 
-# PASSPHRASE = "1234567812345678"
 # Константы
 DATA_FILE = "data.json"
-APP_NAME = "secure_pyside_app_v1"
+APP_NAME = "passmgr"
 KEY_PASSWORD_HASH = "password_hash"
 KEY_SECURITY = "security_settings"
 KEY_BACKEND = "storage_backend"
-LOCK_KEY = "lock_state"
-KEY_FILE_PW = "local_store_password"  # для хранения сгенерированного пароля файла в keyring
+KEY_LOCK = "lock_state"
 
 DEFAULT_SECURITY = {"max_attempts": 5, "lock_duration": 5 * 60}
 LOCAL_STORE_DEFAULT = str(Path.home() / ".secure_app_store.bin")
@@ -107,11 +105,11 @@ def set_security_settings(settings):
 
 
 def get_lock_state():
-    return load_json_key(LOCK_KEY, {"attempts": 0, "unlock_time": 0.0})
+    return load_json_key(KEY_LOCK, {"attempts": 0, "unlock_time": 0.0})
 
 
 def set_lock_state(state):
-    save_json_key(LOCK_KEY, state)
+    save_json_key(KEY_LOCK, state)
 
 
 def clear_lock_state():
@@ -140,61 +138,9 @@ def increment_attempts_and_lock_if_needed(settings):
     return False, settings.get("max_attempts", 5) - attempts
 
 
-def load_backend_choice():
-    try:
-        raw = keyring.get_password(APP_NAME, KEY_BACKEND)
-        if raw:
-            return json.loads(raw)
-    except Exception:
-        pass
-    return {"type": "keyring"}
-
-
-def save_backend_choice(b):
-    keyring.set_password(APP_NAME, KEY_BACKEND, json.dumps(b))
-
-
 # -------------------------
-# Security environment checks
+# Password request window
 # -------------------------
-def check_security_environment(parent=None):
-    messages = []
-
-    # keyring backend type
-    try:
-        kr = keyring.get_keyring()
-        backend_type = type(kr).__name__
-        if "Plaintext" in backend_type or "fail" in backend_type.lower():
-            messages.append("Keyring работает в небезопасном режиме (Plaintext backend). Данные могут храниться в открытом виде.")
-    except Exception:
-        messages.append("Не удалось определить backend keyring (возможна некорректная конфигурация).")
-
-    # PEPPER env variable
-    if "PEPPER" in os.environ:
-        messages.append("Найдена переменная окружения PEPPER. Не рекомендуется хранить pepper в env; используйте keyring/TPM.")
-
-    # check local backend file permissions if configured
-    try:
-        backend_choice = load_backend_choice()
-        if backend_choice.get("type") == "local_encrypted_file":
-            path = backend_choice.get("file")
-            if path and os.path.exists(path):
-                st = os.stat(path)
-                if os.name == "posix":
-                    perms = stat.S_IMODE(st.st_mode)
-                    if perms != 0o600:
-                        messages.append(f"Файл {path} имеет права {oct(perms)}; рекомендуется установить 0o600 (rw-------).")
-    except Exception:
-        pass
-
-    if messages:
-        text = "Обнаружены потенциальные проблемы безопасности:\n\n" + "\n\n".join(messages)
-        if parent is None:
-            QMessageBox.warning(None, "Проверка безопасности", text)
-        else:
-            QMessageBox.warning(parent, "Проверка безопасности", text)
-
-
 class PasswordWindow(QWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -207,7 +153,6 @@ class PasswordWindow(QWidget):
         self.setWindowTitle("Авторизация - Password manager <by ivnsam>")
         self.setFixedSize(420, 200)
         self.settings = get_security_settings()
-        self.backend = load_backend_choice()
 
         # warn if keyring insecure (early)
         try:
@@ -287,13 +232,16 @@ class PasswordWindow(QWidget):
             pass
 
     def open_main_window(self):
-        self.main_window = PassMgrWindow(passphrase=self.session_password)#session_password=self.session_password)
+        self.main_window = MainWindow(passphrase=self.session_password)#session_password=self.session_password)
         self.main_window.show()
         # clear session_password in this window (MainWindow keeps reference if needed)
         self.session_password = None
+        del self.session_password
         self.close()
 
-
+# -------------------------
+# Button with timer
+# -------------------------
 class TimerButton(QPushButton):
     finished = Signal()  # сигнал, который сработает, когда таймер закончится
 
@@ -331,7 +279,10 @@ class TimerButton(QPushButton):
             self.setText(self.default_text)
             self.finished.emit()  # сообщаем, что таймер завершился
 
-class PassMgrWindow(QWidget):
+# -------------------------
+# Main password manager window
+# -------------------------
+class MainWindow(QWidget):
     def __init__(self, passphrase):
         self.passphrase = passphrase
         passphrase = None
@@ -376,11 +327,11 @@ class PassMgrWindow(QWidget):
         self.edit_btn.setEnabled(False)
         self.delete_btn = QPushButton("🗑️Delete")
         self.delete_btn.setEnabled(False)
-        btn_layout = QHBoxLayout()
-        btn_layout.addWidget(self.add_new_btn)
-        btn_layout.addWidget(self.save_btn)
-        btn_layout.addWidget(self.edit_btn)
-        btn_layout.addWidget(self.delete_btn)
+        layout_btn = QHBoxLayout()
+        layout_btn.addWidget(self.add_new_btn)
+        layout_btn.addWidget(self.save_btn)
+        layout_btn.addWidget(self.edit_btn)
+        layout_btn.addWidget(self.delete_btn)
 
         # saved passwords list
         self.list_widget = QListWidget()
@@ -389,20 +340,25 @@ class PassMgrWindow(QWidget):
             self.add_password_item(entry)
         self.list_widget.setCurrentRow(-1)
 
+        # config button
+        config_btn = QPushButton("⚙️")
+        config_btn.clicked.connect(self.on_config)
+
         # complete screen
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Password name:"))
-        layout.addWidget(self.id_edit)
-        layout.addWidget(QLabel("Login:"))
-        layout.addLayout(login_field)
-        layout.addWidget(QLabel("Password:"))
-        layout.addLayout(password_field)
-        layout.addWidget(QLabel("Comment:"))
-        layout.addWidget(self.comment_edit)
-        layout.addLayout(btn_layout)
-        layout.addWidget(QLabel("Saved passwords:"))
-        layout.addWidget(self.list_widget)
-        self.setLayout(layout)
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(QLabel("Password name:"))
+        main_layout.addWidget(self.id_edit)
+        main_layout.addWidget(QLabel("Login:"))
+        main_layout.addLayout(login_field)
+        main_layout.addWidget(QLabel("Password:"))
+        main_layout.addLayout(password_field)
+        main_layout.addWidget(QLabel("Comment:"))
+        main_layout.addWidget(self.comment_edit)
+        main_layout.addLayout(layout_btn)
+        main_layout.addWidget(QLabel("Saved passwords:"))
+        main_layout.addWidget(self.list_widget)
+        main_layout.addWidget(config_btn)
+        self.setLayout(main_layout)
 
         # connections
         self.add_new_btn.clicked.connect(self.on_new)
@@ -560,6 +516,11 @@ class PassMgrWindow(QWidget):
         self.comment_edit.setEnabled(checked)
         self.save_btn.setHidden(not checked)
         self.add_new_btn.setHidden(checked)
+    
+    def on_config(self):
+        self.w = ConfigurationWindow()
+        self.w.setWindowModality(Qt.ApplicationModal)
+        self.w.show()
 
 
     def print_password(self):
@@ -606,6 +567,60 @@ class PassMgrWindow(QWidget):
         self.list_widget.takeItem(item_number)
         self.add_password_item(entry)
         self.list_widget.setCurrentRow(item_number)
+
+# -------------------------
+# Configuration window
+# -------------------------
+class ConfigurationWindow(QWidget):
+    def __init__(self, session_password=None):
+        super().__init__()
+        self.setWindowTitle("Настройки - Password manager <by ivnsam>")
+        self.session_password = session_password  # may be None if user used existing keyring-only auth
+        layout = QVBoxLayout()
+
+        self.change_pass_btn = QPushButton("Сменить пароль")
+        self.change_pass_btn.clicked.connect(self.change_password)
+        self.settings_btn = QPushButton("Настройки (attempts / lock duration)")
+        self.settings_btn.clicked.connect(self.open_security_dialog)
+
+        layout.addWidget(self.change_pass_btn)
+        layout.addWidget(self.settings_btn)
+
+        self.setLayout(layout)
+
+    def change_password(self):
+        old, ok = QInputDialog.getText(self, "Старый пароль", "Введите текущий пароль:", QLineEdit.Password)
+        if not ok or not verify_password(old):
+            QMessageBox.warning(self, "Ошибка", "Старый пароль неверен.")
+            return
+        new, ok = QInputDialog.getText(self, "Новый пароль", "Введите новый пароль:", QLineEdit.Password)
+        if not ok:
+            return
+        confirm, ok = QInputDialog.getText(self, "Подтвердите", "Повторите пароль:", QLineEdit.Password)
+        if not ok or new != confirm:
+            QMessageBox.warning(self, "Ошибка", "Пароли не совпадают.")
+            return
+        set_password_hash(new)
+        QMessageBox.information(self, "Успешно", "Пароль изменён.")
+        # if session had the old password, update it
+        self.session_password = new
+
+    def open_security_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Настройки безопасности")
+        form = QFormLayout(dialog)
+        s = get_security_settings()
+        attempts_box = QSpinBox(); attempts_box.setRange(1, 20); attempts_box.setValue(s.get("max_attempts", 5))
+        dur_box = QSpinBox(); dur_box.setRange(1, 1440); dur_box.setValue(s.get("lock_duration", 300) // 60)
+        form.addRow("Количество попыток:", attempts_box)
+        form.addRow("Длительность блокировки (мин):", dur_box)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        form.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        if dialog.exec() == QDialog.Accepted:
+            new_settings = {"max_attempts": attempts_box.value(), "lock_duration": dur_box.value() * 60}
+            set_security_settings(new_settings)
+            QMessageBox.information(self, "Сохранено", "Настройки безопасности обновлены.")
 
 
 def main():
