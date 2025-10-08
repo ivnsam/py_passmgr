@@ -1,9 +1,6 @@
 name: Build PySide6 App
 
 on:
-  push:
-    tags:
-      - "release-v*"
   workflow_dispatch:  # позволяет запуск вручную из любой ветки/тэга
     inputs:
       create_release:
