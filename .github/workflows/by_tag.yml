@@ -31,7 +31,7 @@ jobs:
         python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.Windows --include-module=keyrings.alt.file --include-package=win32ctypes --include-module=keyring_init --windows-console-mode=disable --output-dir=dist $env:MAIN_FILE
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: $APP_NAME-windows
         path: dist/$APP_NAME.exe
@@ -57,7 +57,7 @@ jobs:
         python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.macOS --include-module=keyrings.alt.file --include-module=keyring_init --macos-create-app-bundle --output-dir=dist $MAIN_FILE
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: $APP_NAME-macos
         path: dist/$APP_NAME.app
@@ -88,7 +88,7 @@ jobs:
         python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.SecretService --include-module=keyrings.alt.file --include-package=secretstorage --include-package=jeepney --include-module=keyring_init --output-dir=dist $MAIN_FILE
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: $APP_NAME-linux
         path: dist/$APP_NAME.bin
