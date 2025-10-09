@@ -1,12 +1,6 @@
 argon2-cffi==25.1.0
-argon2-cffi-bindings==25.1.0
 PySide6==6.9.1
-PySide6_Addons==6.9.1
-PySide6_Essentials==6.9.1
 bson==0.5.10
 keyboard==0.13.5
-pyinstaller==6.15.0
-pyinstaller-hooks-contrib==2025.8
 pycryptodome==3.23.0
-pycryptodomex==3.23.0
 keyring==25.6.0
