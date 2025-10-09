@@ -28,7 +28,7 @@ jobs:
     
     - name: Build with Nuitka
       run: |
-        python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.Windows --include-module=keyrings.alt.file --include-package=win32ctypes --include-module=keyring_init --windows-console-mode=disable --output-dir=dist $env:MAIN_FILE
+        python -m nuitka --standalone --onefile --portable --assume-yes-for-downloads --enable-plugin=pyside6 --include-module=keyring.backends.Windows --include-module=keyrings.alt.file --include-package=win32ctypes --include-module=keyring_init --windows-console-mode=disable --output-dir=dist $env:MAIN_FILE
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -54,7 +54,7 @@ jobs:
     
     - name: Build with Nuitka
       run: |
-        python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.macOS --include-module=keyrings.alt.file --include-module=keyring_init --macos-create-app-bundle --output-dir=dist $MAIN_FILE
+        python -m nuitka --standalone --onefile --portable --assume-yes-for-downloads --enable-plugin=pyside6 --include-module=keyring.backends.macOS --include-module=keyrings.alt.file --include-module=keyring_init --macos-create-app-bundle --output-dir=dist $MAIN_FILE
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -85,7 +85,7 @@ jobs:
     
     - name: Build with Nuitka
       run: |
-        python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.SecretService --include-module=keyrings.alt.file --include-package=secretstorage --include-package=jeepney --include-module=keyring_init --output-dir=dist $MAIN_FILE
+        python -m nuitka --standalone --onefile --portable --assume-yes-for-downloads --enable-plugin=pyside6 --include-module=keyring.backends.SecretService --include-module=keyrings.alt.file --include-package=secretstorage --include-package=jeepney --include-module=keyring_init --output-dir=dist $MAIN_FILE
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
