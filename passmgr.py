@@ -8,6 +8,9 @@ from PySide6.QtGui import QShortcut
 import keyboard
 from random import uniform
 import kryptonator
+
+import keyring_init
+
 import keyring
 from argon2 import PasswordHasher, exceptions as argon2_exceptions
 import json

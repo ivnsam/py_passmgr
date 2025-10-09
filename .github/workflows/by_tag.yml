@@ -10,43 +10,89 @@ env:
   MAIN_FILE: passmgr.py
 
 jobs:
-  build:
-    name: Build for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
+  build-windows:
+    runs-on: windows-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka ordered-set
+        pip install -r requirements.txt
+    
+    - name: Build with Nuitka
+      run: |
+        python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.Windows --include-module=keyrings.alt.file --include-package=win32ctypes --include-module=keyring_init --windows-console-mode=disable --output-dir=dist $env:MAIN_FILE
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: $APP_NAME-windows
+        path: dist/$APP_NAME.exe
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka ordered-set
+        pip install -r requirements.txt
+    
+    - name: Build with Nuitka
+      run: |
+        python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.macOS --include-module=keyrings.alt.file --include-module=keyring_init --macos-create-app-bundle --output-dir=dist $MAIN_FILE
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: $APP_NAME-macos
+        path: dist/$APP_NAME.app
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install nuitka==2.7.16
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libdbus-1-dev libsecret-1-dev
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka ordered-set
+        pip install -r requirements.txt
+    
+    - name: Build with Nuitka
+      run: |
+        python -m nuitka --standalone --onefile --enable-plugin=pyside6 --include-module=keyring.backends.SecretService --include-module=keyrings.alt.file --include-package=secretstorage --include-package=jeepney --include-module=keyring_init --output-dir=dist $MAIN_FILE
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: $APP_NAME-linux
+        path: dist/$APP_NAME.bin
 
-      - name: Build app
-        if: runner.os != 'Windows'
-        run: |
-          python -m nuitka --standalone --onefile --output-dir=dist $MAIN_FILE
-      
-      - name: Build app windows
-        if: runner.os == 'Windows'
-        run: |
-          python -m nuitka --standalone --onefile --output-dir=dist $env:MAIN_FILE
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.os }}-${{ env.APP_NAME }}
-          path: dist/*
 
   # release:
   #   name: Create GitHub Release
