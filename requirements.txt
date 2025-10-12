@@ -1,0 +1,14 @@
+argon2-cffi==25.1.0
+PySide6==6.9.1
+bson==0.5.10
+keyboard==0.13.5
+pycryptodome==3.23.0
+pycryptodomex==3.23.0
+keyring==25.6.0
+keyrings.alt>=5.0.0
+
+# Платформо-специфичные зависимости
+pywin32-ctypes>=0.2.0; sys_platform == 'win32'
+pywin32>=305; sys_platform == 'win32'
+secretstorage==3.4.0; sys_platform == 'linux'
+jeepney>=0.8.0; sys_platform == 'linux'

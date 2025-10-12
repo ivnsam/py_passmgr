@@ -1,0 +1,117 @@
+name: Build PySide6 App
+
+on:
+  push:
+    tags:
+      - "release-v*"
+
+env:
+  APP_NAME: passmgr
+  MAIN_FILE: passmgr.py
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka ordered-set
+        pip install -r requirements.txt
+    
+    - name: Build with Nuitka
+      run: |
+        python -m nuitka --standalone --onefile --assume-yes-for-downloads --enable-plugin=pyside6 --include-module=keyring.backends.Windows --include-module=keyrings.alt.file --include-package=win32ctypes --include-module=keyring_init --windows-console-mode=disable --output-dir=dist $env:MAIN_FILE
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.APP_NAME }}-windows
+        path: dist/${{ env.APP_NAME }}.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka ordered-set
+        pip install -r requirements.txt
+    
+    - name: Build with Nuitka
+      run: |
+        python -m nuitka --standalone --onefile --assume-yes-for-downloads --enable-plugin=pyside6 --include-module=keyring.backends.macOS --include-module=keyrings.alt.file --include-module=keyring_init --macos-create-app-bundle --output-dir=dist $MAIN_FILE
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.APP_NAME }}-macos
+        path: dist/${{ env.APP_NAME }}.app
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libdbus-1-dev libsecret-1-dev
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka ordered-set
+        pip install -r requirements.txt
+    
+    - name: Build with Nuitka
+      run: |
+        python -m nuitka --standalone --onefile --assume-yes-for-downloads --enable-plugin=pyside6 --include-module=keyring.backends.SecretService --include-module=keyrings.alt.file --include-package=secretstorage --include-package=jeepney --include-module=keyring_init --output-dir=dist $MAIN_FILE
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.APP_NAME }}-linux
+        path: dist/${{ env.APP_NAME }}.bin
+
+
+  # release:
+  #   name: Create GitHub Release
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #     pull-requests: write
+  #     repository-projects: write
+
+  #   steps:
+  #     - name: Download all build artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: dist
+
+  #     - name: Create Release
+  #       uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: dist/**/*
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
